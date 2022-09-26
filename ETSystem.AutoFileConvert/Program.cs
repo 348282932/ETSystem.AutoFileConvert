@@ -47,7 +47,7 @@ namespace ETSystem.AutoFileConvert
 
             var machineGuid = localMachine64.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography").GetValue("MachineGuid")?.ToString();
 
-            if (machineCode == machineGuid && activationCode == Encryption.Md5($"ET{machineCode}ET").ToLower()) return true;
+            if (machineCode == machineGuid && activationCode.ToLower() == Encryption.Md5($"ET{machineCode}ET").ToLower()) return true;
 
             return false;
         }

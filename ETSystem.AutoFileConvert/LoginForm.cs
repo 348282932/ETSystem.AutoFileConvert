@@ -64,27 +64,17 @@ namespace ETSystem.AutoFileConvert
 
             var serviceUserPassword = ConfigurationManager.AppSettings["Password"]?.ToString();
 
-            if (string.IsNullOrEmpty(serviceUserAccount) || string.IsNullOrEmpty(serviceUserPassword)) 
+            if (!string.IsNullOrEmpty(serviceUserAccount) && !string.IsNullOrEmpty(serviceUserPassword)) 
             {
-                lbl_Tip.Text = $"服务端用户配置加载失败！";
+                var responseB = Login(serviceUserAccount, serviceUserPassword, cookieB);
 
-                return;
+                if (responseB.Success)
+                {
+                    PublicData.UserB = responseB.Data;
+                };
             }
 
-            var responseB = Login(serviceUserAccount, serviceUserPassword, cookieB);
-
-            if (!responseB.Success)
-            {
-                lbl_Tip.Text = $"服务端用户连接失败！";
-
-                return;
-            };
-
-            PublicData.UserB = responseB.Data;
-
             #region 记住密码
-
-            
 
             if (cbx_SavePassword.Checked)
             {

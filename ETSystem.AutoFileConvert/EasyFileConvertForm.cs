@@ -163,8 +163,9 @@ namespace ETSystem.AutoFileConvert
         /// <summary>
         /// 搜索文件
         /// </summary>
+        /// <param name="isSimpleConvert"></param>
         /// <returns></returns>
-        private bool SearchFile() 
+        private bool SearchFile(bool isSimpleConvert) 
         {
             uploadFileList.Clear();
 
@@ -172,7 +173,9 @@ namespace ETSystem.AutoFileConvert
 
             var param = $"pageIndex=1&pageSize=20&queryType=0&query=";
 
-            var response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/files/needDowloadFiles", param, PublicData.UserB.CookieContainer);
+            var user = isSimpleConvert ? PublicData.UserA : PublicData.UserB;
+
+            var response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/files/needDowloadFiles", param, user.CookieContainer);
 
             if (!response.Success)
             {
@@ -204,23 +207,26 @@ namespace ETSystem.AutoFileConvert
                     }
                 }
 
-                if (file.UploadCompany == PublicData.UserB.CompanyName || file.UploadUser == PublicData.UserB.UserName)
+                if (file.UploadCompany == user.CompanyName || file.UploadUser == user.UserName)
                 {
                     if (file.TypeAfter == "prj" || file.TypeAfter == "dxf")
                     {
-                        var item = new ListViewItem();
-
-                        item.SubItems[0].Text = file.FileId;
-
-                        var arr = file.FileName.Replace(".ets", $".{file.TypeAfter}").Split('_');
-
-                        if (arr.Length < 4) continue;
-
-                        if (arr[0] == PublicData.UserA.CompanyName && arr[1] == PublicData.UserA.UserName)
+                        if (isSimpleConvert)
                         {
-                            file.FileName = string.Join("_", arr.Skip(3));
-
                             downFileList.Add(file);
+                        }
+                        else 
+                        {
+                            var arr = file.FileName.Replace(".ets", $".{file.TypeAfter}").Split('_');
+
+                            if (arr.Length < 4) continue;
+
+                            if (arr[0] == PublicData.UserA.CompanyName && arr[1] == PublicData.UserA.UserName)
+                            {
+                                file.FileName = string.Join("_", arr.Skip(3));
+
+                                downFileList.Add(file);
+                            }
                         }
                     }
                 }
@@ -342,10 +348,11 @@ namespace ETSystem.AutoFileConvert
         /// <param name="fileId"></param>
         /// <param name="fileName"></param>
         /// <param name="savePath"></param>
+        /// <param name="isSimpleConvert"></param>
         /// <returns></returns>
-        private bool Download(string fileId, string fileName, string savePath) 
+        private bool Download(string fileId, string fileName, string savePath, bool isSimpleConvert) 
         {
-            var response = HttpHelper.HttpGet($"https://file.etsystem.cn/cadapi/files/dowonload?fileIds={fileId}", "", PublicData.UserB.CookieContainer);
+            var response = HttpHelper.HttpGet($"https://file.etsystem.cn/cadapi/files/dowonload?fileIds={fileId}", "", isSimpleConvert ? PublicData.UserA.CookieContainer : PublicData.UserB.CookieContainer);
 
             if (!response.Success)
             {
@@ -360,7 +367,20 @@ namespace ETSystem.AutoFileConvert
             {
                 var downUrl = jArry[i].ToObject<string>();
 
-                if (downUrl.IndexOf(".rul?") > -1) fileName = fileName.Replace(".dxf", ".rul");
+                if (downUrl.IndexOf(".rul?") > -1)
+                {
+                    fileName = fileName.Replace(".dxf", ".rul");
+                    fileName = fileName.Replace(".ets", ".rul");
+                }
+                if (downUrl.IndexOf(".dxf?") > -1)
+                {
+                    fileName = fileName.Replace(".ets", ".dxf");
+                }
+
+                if (downUrl.IndexOf(".prj?") > -1)
+                {
+                    fileName = fileName.Replace(".ets", ".prj");
+                }
 
                 response = HttpHelper.HttpDownload(downUrl, fileName, savePath);
 
@@ -370,6 +390,89 @@ namespace ETSystem.AutoFileConvert
 
                     return false;
                 }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 简单转换文件（直接用A账户转）
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <param name="fileName"></param>
+        /// <returns></returns>
+        private bool SimpleConvertFile(string filePath, string fileName)
+        {
+            var typeAfter = rb_prj.Checked ? "db" : "dxf";
+
+            var paramStr = $"toCompanyId={PublicData.UserA.CompanyId}&fileCount=1&projectId=0&typeAfter={typeAfter}&ext=ets";
+
+            var response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/FileConvert/getOssPara", paramStr, PublicData.UserA.CookieContainer);
+
+            if (!response.Success)
+            {
+                MessageBox.Show("转换失败！");
+
+                return false;
+            }
+
+            var jTokenObj = (JToken)JsonConvert.DeserializeObject(response.Message);
+
+            var ossConfig = new OssConfig
+            {
+                AccessId = jTokenObj["Data"]["accessid"].ToString(),
+                Dir = jTokenObj["Data"]["dir"].ToString(),
+                FileName = jTokenObj["Data"]["FileName"].ToString(),
+                OssHost = jTokenObj["Data"]["osshost"].ToString(),
+                Policy = jTokenObj["Data"]["policy"].ToString(),
+                Signature = jTokenObj["Data"]["signature"].ToString(),
+            };
+
+            fileConversionID = ossConfig.FileName;
+
+            var data = new NameValueCollection
+            {
+                { "policy", ossConfig.Policy},
+                { "OSSAccessKeyId", ossConfig.AccessId },
+                { "success_action_status", "200" },
+                { "signature", ossConfig.Signature},
+                { "region", ossConfig.OssHost},
+                { "dic", ossConfig.Dir},
+                { "name", $"{ossConfig.FileName}.ets" },
+                { "key", $"{ossConfig.Dir}{ossConfig.FileName}.ets" },
+            };
+
+            response = HttpHelper.HttpUpload(ossConfig.OssHost, filePath, data);
+
+            if (!response.Success)
+            {
+                MessageBox.Show("转换失败！");
+
+                return false;
+            }
+
+            var users = new int[] { PublicData.UserA.UserId };
+
+            var exportType = rb_prj.Checked ? "DB" : "HGGT";
+
+            var uploadStr = JsonConvert.SerializeObject(new
+            {
+                fileName = fileName,
+                fileSize = new FileInfo(filePath).Length,
+                FileConverId = ossConfig.FileName,
+                users = users,
+                companyId = PublicData.UserA.CompanyId,
+                exportType = exportType,
+                projectId = 0
+            });
+
+            response = HttpHelper.HttpPost("https://file.etsystem.cn/cadapi/FileConvert/uploadFile", uploadStr, PublicData.UserA.CookieContainer);
+
+            if (!response.Success)
+            {
+                MessageBox.Show("转换失败！");
+
+                return false;
             }
 
             return true;
@@ -398,33 +501,42 @@ namespace ETSystem.AutoFileConvert
 
             this.DoWorkAsync((o) => //耗时逻辑处理(此处不能操作UI控件，因为是在异步中)
             {
-                if (!UploadFile(lbl_FliePath.Text)) return false;
-
                 var file = new ETFile();
 
                 var num = 0;
 
+                var isSimpleConvert = PublicData.UserB == null;
+
+                if (PublicData.UserB != null)
+                {
+                    if (!UploadFile(lbl_FliePath.Text)) return false;
+
+                    do
+                    {
+                        Thread.Sleep(3000);
+
+                        SearchFile(isSimpleConvert);
+
+                        file = uploadFileList.FirstOrDefault(f => f.FileConversionID == fileConversionID);
+
+                        if (++num > 6) return false;
+
+                    } while (file == null);
+
+                    if (!ConvertFile(file.FileId, file.FileName)) return false;
+
+                    num = 0;
+                }
+                else
+                {
+                    if (!SimpleConvertFile(lbl_FliePath.Text, tbx_FileName.Text)) return false;
+                }
+
                 do
                 {
                     Thread.Sleep(3000);
 
-                    SearchFile();
-
-                    file = uploadFileList.FirstOrDefault(f => f.FileConversionID == fileConversionID);
-
-                    if (++num > 6) return false;
-
-                } while (file == null);
-
-                if (!ConvertFile(file.FileId, file.FileName)) return false; 
-
-                num = 0;
-
-                do
-                {
-                    Thread.Sleep(3000);
-
-                    SearchFile();
+                    SearchFile(isSimpleConvert);
 
                     file = downFileList.FirstOrDefault(f => f.FileConversionID == fileConversionID);
 
@@ -432,7 +544,16 @@ namespace ETSystem.AutoFileConvert
 
                 } while (file == null);
 
-                return Download(file.FileId, file.FileName, tbx_OutputPath.Text);
+                if (PublicData.UserB != null)
+                {
+                    return Download(file.FileId, file.FileName, tbx_OutputPath.Text, isSimpleConvert);
+                }
+                else 
+                {
+                    return Download(file.FileId, file.FileName, tbx_OutputPath.Text, isSimpleConvert);
+                }
+
+                
 
             }, null, (success) => //显示结果（此处用于对上面结果的处理，比如显示到界面上）
             {
