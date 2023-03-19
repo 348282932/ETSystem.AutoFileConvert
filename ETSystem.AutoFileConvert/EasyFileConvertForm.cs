@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,13 +15,20 @@ namespace ETSystem.AutoFileConvert
 {
     public partial class EasyFileConvertForm : BaseForm
     {
-        public static List<ETFile> uploadFileList = new List<ETFile>();
+        /// <summary>
+        /// 历史搜索缓存文件地址
+        /// </summary>
+        private static readonly string serchCachePath = $"{Application.StartupPath}\\SeachCache.data";
 
         public static List<ETFile> downFileList = new List<ETFile>();
 
         public static string id = string.Empty;
 
         public static string fileConversionID = string.Empty;
+
+        public static string dxfType = string.Empty;
+
+        public static string initialDirectory = Application.StartupPath;
 
 
         public EasyFileConvertForm()
@@ -45,7 +51,7 @@ namespace ETSystem.AutoFileConvert
 
             //设置打开对话框的初始目录，默认目录为exe运行文件所在的路径
 
-            ofd.InitialDirectory = Application.StartupPath;
+            ofd.InitialDirectory = initialDirectory;
 
             //设置打开对话框的标题
 
@@ -57,7 +63,7 @@ namespace ETSystem.AutoFileConvert
 
             //设置对话框打开的文件类型
 
-            ofd.Filter = "ETS文件|*.ets";
+            ofd.Filter = "ET系统文件（*.ets,*.prj）|*.ets;*.prj";
 
             //设置文件对话框当前选定的筛选器的索引
 
@@ -76,88 +82,9 @@ namespace ETSystem.AutoFileConvert
                 //获取对话框中所选文件的文件名和扩展名，文件名不包括路径
 
                 tbx_FileName.Text = ofd.SafeFileName;
+
+                initialDirectory = Path.GetDirectoryName(ofd.FileName);
             }
-        }
-
-        /// <summary>
-        /// 上传ETS文件
-        /// </summary>
-        /// <returns></returns>
-        private bool UploadFile(string filePath) 
-        {
-            var uploadStr = JsonConvert.SerializeObject(new { buyCompanyId = PublicData.UserB.CompanyId, saleCompanyName = PublicData.UserA.CompanyName, ext = "ets" });
-
-            var response = HttpHelper.HttpPost("https://file.etsystem.cn/cadapi/deal/getossparas", uploadStr, PublicData.UserA.CookieContainer);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            var jTokenObj = (JToken)JsonConvert.DeserializeObject(response.Message);
-
-            var ossConfig = new OssConfig
-            {
-                AccessId = jTokenObj["Data"]["accessid"].ToString(),
-                Dir = jTokenObj["Data"]["dir"].ToString(),
-                FileName = jTokenObj["Data"]["FileName"].ToString(),
-                OssHost = jTokenObj["Data"]["osshost"].ToString(),
-                Policy = jTokenObj["Data"]["policy"].ToString(),
-                Signature = jTokenObj["Data"]["signature"].ToString(),
-                Mode = jTokenObj["Mode"].ToString()
-            };
-
-            fileConversionID = ossConfig.FileName;
-
-            var data = new NameValueCollection
-            {
-                { "policy", ossConfig.Policy},
-                { "OSSAccessKeyId", ossConfig.AccessId },
-                { "success_action_status", "200" },
-                { "signature", ossConfig.Signature},
-                { "region", ossConfig.OssHost},
-                { "dic", ossConfig.Dir},
-                { "name", $"{ossConfig.FileName}.ets" },
-                { "key", $"{ossConfig.Dir}{ossConfig.FileName}.ets" },
-            };
-
-            response = HttpHelper.HttpUpload(ossConfig.OssHost, filePath, data);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            uploadStr = JsonConvert.SerializeObject(new
-            {
-                fileName = tbx_FileName.Text,
-                proId = 0,
-                fileSize = new FileInfo(filePath).Length,
-                FileConverId = ossConfig.FileName,
-                remark = "",
-                isMark = false,
-                gridType = 0,
-                Bid = PublicData.UserB.CompanyId,
-                filePath = ossConfig.Dir,
-                Mode = ossConfig.Mode,
-                ReceiveCompanyId = PublicData.UserB.CompanyId,
-                sourceKey = $"{ossConfig.Dir}{ossConfig.FileName}.ets"
-            });
-
-            response = HttpHelper.HttpPost("https://file.etsystem.cn/cadapi/deal/uploadFile", uploadStr, PublicData.UserA.CookieContainer);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false; 
-            }
-
-            return true;
         }
 
         /// <summary>
@@ -165,21 +92,19 @@ namespace ETSystem.AutoFileConvert
         /// </summary>
         /// <param name="isSimpleConvert"></param>
         /// <returns></returns>
-        private bool SearchFile(bool isSimpleConvert) 
+        private bool SearchFile() 
         {
-            uploadFileList.Clear();
-
             downFileList.Clear();
 
             var param = $"pageIndex=1&pageSize=20&queryType=0&query=";
 
-            var user = isSimpleConvert ? PublicData.UserA : PublicData.UserB;
+            var user = PublicData.UserA;
 
             var response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/files/needDowloadFiles", param, user.CookieContainer);
 
             if (!response.Success)
             {
-                MessageBox.Show("转换失败！");
+                MessageBox.Show($"转换失败！{response.Message}");
 
                 return false;
             }
@@ -199,144 +124,13 @@ namespace ETSystem.AutoFileConvert
                     TypeAfter = jToken["TypeAfter"].ToObject<string>()
                 };
 
-                if (file.UploadCompany == PublicData.UserA.CompanyName || file.UploadUser == PublicData.UserA.UserName)
-                {
-                    if (file.TypeAfter == "ets")
-                    {
-                        uploadFileList.Add(file);
-                    }
-                }
-
                 if (file.UploadCompany == user.CompanyName || file.UploadUser == user.UserName)
                 {
-                    if (file.TypeAfter == "prj" || file.TypeAfter == "dxf")
+                    if (file.TypeAfter == "prj" || file.TypeAfter == "ets" || file.TypeAfter == "dxf")
                     {
-                        if (isSimpleConvert)
-                        {
-                            downFileList.Add(file);
-                        }
-                        else 
-                        {
-                            var arr = file.FileName.Replace(".ets", $".{file.TypeAfter}").Split('_');
-
-                            if (arr.Length < 4) continue;
-
-                            if (arr[0] == PublicData.UserA.CompanyName && arr[1] == PublicData.UserA.UserName)
-                            {
-                                file.FileName = string.Join("_", arr.Skip(3));
-
-                                downFileList.Add(file);
-                            }
-                        }
+                        downFileList.Add(file);
                     }
                 }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// 转换文件
-        /// </summary>
-        /// <param name="fileId"></param>
-        /// <param name="convertFileName"></param>
-        /// <returns></returns>
-        private bool ConvertFile(string fileId, string convertFileName) 
-        {
-            var response = HttpHelper.HttpGet($"https://file.etsystem.cn/cadapi/files/dowonload?fileIds={fileId}", "", PublicData.UserB.CookieContainer);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            var downUrl = ((JArray)((JToken)JsonConvert.DeserializeObject(response.Message))["pathList"])[0].ToObject<string>();
-
-            var fileName = $"{PublicData.UserA.CompanyName}_{PublicData.UserA.UserName}_{DateTime.Now:yyyyMMddHHmmss}_{convertFileName}";
-
-            response = HttpHelper.HttpDownload(downUrl, fileName);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            var typeAfter = rb_prj.Checked ? "db" : "dxf";
-
-            var paramStr = $"toCompanyId={PublicData.UserB.CompanyId}&fileCount=1&projectId=0&typeAfter={typeAfter}&ext=ets";
-
-            response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/FileConvert/getOssPara", paramStr, PublicData.UserB.CookieContainer);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            var jTokenObj = (JToken)JsonConvert.DeserializeObject(response.Message);
-
-            var ossConfig = new OssConfig
-            {
-                AccessId = jTokenObj["Data"]["accessid"].ToString(),
-                Dir = jTokenObj["Data"]["dir"].ToString(),
-                FileName = jTokenObj["Data"]["FileName"].ToString(),
-                OssHost = jTokenObj["Data"]["osshost"].ToString(),
-                Policy = jTokenObj["Data"]["policy"].ToString(),
-                Signature = jTokenObj["Data"]["signature"].ToString(),
-            };
-
-            fileConversionID = ossConfig.FileName;
-
-            var data = new NameValueCollection
-            {
-                { "policy", ossConfig.Policy},
-                { "OSSAccessKeyId", ossConfig.AccessId },
-                { "success_action_status", "200" },
-                { "signature", ossConfig.Signature},
-                { "region", ossConfig.OssHost},
-                { "dic", ossConfig.Dir},
-                { "name", $"{ossConfig.FileName}.ets" },
-                { "key", $"{ossConfig.Dir}{ossConfig.FileName}.ets" },
-            };
-
-            var filePath = $"{Application.StartupPath}\\Download\\{fileName}";
-
-            response = HttpHelper.HttpUpload(ossConfig.OssHost, filePath, data);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
-            }
-
-            var users = new int[] { PublicData.UserB.UserId };
-
-            var exportType = rb_prj.Checked ? "DB" : "HGGT";
-
-            var uploadStr = JsonConvert.SerializeObject(new
-            {
-                fileName = fileName,
-                fileSize = new FileInfo(filePath).Length,
-                FileConverId = ossConfig.FileName,
-                users = users,
-                companyId = PublicData.UserB.CompanyId,
-                exportType = exportType,
-                projectId = 0
-            });
-
-            response = HttpHelper.HttpPost("https://file.etsystem.cn/cadapi/FileConvert/uploadFile", uploadStr, PublicData.UserB.CookieContainer);
-
-            if (!response.Success)
-            {
-                MessageBox.Show("转换失败！");
-
-                return false;
             }
 
             return true;
@@ -348,15 +142,14 @@ namespace ETSystem.AutoFileConvert
         /// <param name="fileId"></param>
         /// <param name="fileName"></param>
         /// <param name="savePath"></param>
-        /// <param name="isSimpleConvert"></param>
         /// <returns></returns>
-        private bool Download(string fileId, string fileName, string savePath, bool isSimpleConvert) 
+        private bool Download(string fileId, string fileName, string savePath) 
         {
-            var response = HttpHelper.HttpGet($"https://file.etsystem.cn/cadapi/files/dowonload?fileIds={fileId}", "", isSimpleConvert ? PublicData.UserA.CookieContainer : PublicData.UserB.CookieContainer);
+            var response = HttpHelper.HttpGet($"https://file.etsystem.cn/cadapi/files/dowonload?fileIds={fileId}", "", PublicData.UserA.CookieContainer);
 
             if (!response.Success)
             {
-                MessageBox.Show("转换失败！");
+                MessageBox.Show($"转换失败！{response.Message}");
 
                 return false;
             }
@@ -382,11 +175,16 @@ namespace ETSystem.AutoFileConvert
                     fileName = fileName.Replace(".ets", ".prj");
                 }
 
+                if (downUrl.IndexOf(".ets?") > -1)
+                {
+                    fileName = fileName.Replace(".prj", ".ets");
+                }
+
                 response = HttpHelper.HttpDownload(downUrl, fileName, savePath);
 
                 if (!response.Success)
                 {
-                    MessageBox.Show("转换失败！");
+                    MessageBox.Show($"转换失败！{response.Message}");
 
                     return false;
                 }
@@ -403,15 +201,17 @@ namespace ETSystem.AutoFileConvert
         /// <returns></returns>
         private bool SimpleConvertFile(string filePath, string fileName)
         {
-            var typeAfter = rb_prj.Checked ? "db" : "dxf";
+            var typeAfter = rb_prj.Checked ? "db" : rb_ets.Checked ? "" : "dxf";
 
-            var paramStr = $"toCompanyId={PublicData.UserA.CompanyId}&fileCount=1&projectId=0&typeAfter={typeAfter}&ext=ets";
+            var ext = rb_ets.Checked ? "prj" : "ets";
+
+            var paramStr = $"toCompanyId={PublicData.UserA.CompanyId}&fileCount=1&projectId=0&typeAfter={typeAfter}&ext={ext}";
 
             var response = HttpHelper.HttpGet("https://file.etsystem.cn/cadapi/FileConvert/getOssPara", paramStr, PublicData.UserA.CookieContainer);
 
             if (!response.Success)
             {
-                MessageBox.Show("转换失败！");
+                MessageBox.Show($"转换失败！{response.Message}");
 
                 return false;
             }
@@ -438,22 +238,22 @@ namespace ETSystem.AutoFileConvert
                 { "signature", ossConfig.Signature},
                 { "region", ossConfig.OssHost},
                 { "dic", ossConfig.Dir},
-                { "name", $"{ossConfig.FileName}.ets" },
-                { "key", $"{ossConfig.Dir}{ossConfig.FileName}.ets" },
+                { "name", $"{ossConfig.FileName}.{ext}" },
+                { "key", $"{ossConfig.Dir}{ossConfig.FileName}.{ext}" },
             };
 
             response = HttpHelper.HttpUpload(ossConfig.OssHost, filePath, data);
 
             if (!response.Success)
             {
-                MessageBox.Show("转换失败！");
+                MessageBox.Show($"转换失败！{response.Message}");
 
                 return false;
             }
 
             var users = new int[] { PublicData.UserA.UserId };
 
-            var exportType = rb_prj.Checked ? "DB" : "HGGT";
+            var exportType = rb_prj.Checked ? "DB" : dxfType;
 
             var uploadStr = JsonConvert.SerializeObject(new
             {
@@ -463,6 +263,7 @@ namespace ETSystem.AutoFileConvert
                 users = users,
                 companyId = PublicData.UserA.CompanyId,
                 exportType = exportType,
+                sourceKey = $"{ossConfig.Dir}{ossConfig.FileName}.{ext}",
                 projectId = 0
             });
 
@@ -470,7 +271,7 @@ namespace ETSystem.AutoFileConvert
 
             if (!response.Success)
             {
-                MessageBox.Show("转换失败！");
+                MessageBox.Show($"转换失败！{response.Message}");
 
                 return false;
             }
@@ -499,61 +300,54 @@ namespace ETSystem.AutoFileConvert
                 return;
             }
 
+            dxfType = cbx_dxfType.SelectedValue.ToString();
+
+            if (rb_prj.Checked && !lbl_FliePath.Text.EndsWith(".ets", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("转正版请上传.ets格式的文件后再操作！");
+
+                return;
+            }
+
+            if (rb_ets.Checked && !lbl_FliePath.Text.EndsWith(".prj", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("转正版请上传.prj格式的文件后再操作！");
+
+                return;
+            }
+
+            if (rb_xdf.Checked && !lbl_FliePath.Text.EndsWith(".ets", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("转DXF请上传.ets格式的文件后再操作！");
+
+                return;
+            }
+
+            var userSeachCache = JsonConvert.SerializeObject(new { FliePath = Path.GetDirectoryName(lbl_FliePath.Text), OutputPath = tbx_OutputPath.Text });
+
+            File.WriteAllText(serchCachePath, userSeachCache);
+
             this.DoWorkAsync((o) => //耗时逻辑处理(此处不能操作UI控件，因为是在异步中)
             {
                 var file = new ETFile();
 
                 var num = 0;
 
-                var isSimpleConvert = PublicData.UserB == null;
-
-                if (PublicData.UserB != null)
-                {
-                    if (!UploadFile(lbl_FliePath.Text)) return false;
-
-                    do
-                    {
-                        Thread.Sleep(3000);
-
-                        SearchFile(isSimpleConvert);
-
-                        file = uploadFileList.FirstOrDefault(f => f.FileConversionID == fileConversionID);
-
-                        if (++num > 6) return false;
-
-                    } while (file == null);
-
-                    if (!ConvertFile(file.FileId, file.FileName)) return false;
-
-                    num = 0;
-                }
-                else
-                {
-                    if (!SimpleConvertFile(lbl_FliePath.Text, tbx_FileName.Text)) return false;
-                }
+                if (!SimpleConvertFile(lbl_FliePath.Text, tbx_FileName.Text)) return false;
 
                 do
                 {
                     Thread.Sleep(3000);
 
-                    SearchFile(isSimpleConvert);
+                    SearchFile();
 
                     file = downFileList.FirstOrDefault(f => f.FileConversionID == fileConversionID);
 
-                    if (++num > 8) return false;
+                    if (++num > 20) return false;
 
                 } while (file == null);
 
-                if (PublicData.UserB != null)
-                {
-                    return Download(file.FileId, file.FileName, tbx_OutputPath.Text, isSimpleConvert);
-                }
-                else 
-                {
-                    return Download(file.FileId, file.FileName, tbx_OutputPath.Text, isSimpleConvert);
-                }
-
-                
+                return Download(file.FileId, file.FileName, tbx_OutputPath.Text);
 
             }, null, (success) => //显示结果（此处用于对上面结果的处理，比如显示到界面上）
             {
@@ -564,10 +358,6 @@ namespace ETSystem.AutoFileConvert
                     tbx_FileName.Text = string.Empty;
 
                     MessageBox.Show($"转换成功！");
-                }
-                else
-                {
-                    MessageBox.Show("转换失败！");
                 }
             });
         }
@@ -610,15 +400,84 @@ namespace ETSystem.AutoFileConvert
 
         private void EasyFileConvertForm_Load(object sender, EventArgs e)
         {
+            BindDxfTypeCbx(); // 绑定 DXF 选项
+
+            LoadSeachCache(); // 加载搜索缓存
+
+            LoadConvertAuth(); // 加载转换类型授权
+        }
+
+        /// <summary>
+        /// 绑定 DXF 选项
+        /// </summary>
+        private void BindDxfTypeCbx()
+        {
+            var dxfTypeList = new List<DxfType>() 
+            {
+                new DxfType() { Text = "格伯和力克", Value = "HGGT" },
+                new DxfType() { Text = "格柏低版本", Value = "LGGT" },
+                new DxfType() { Text = "艾维丝", Value = "AWS" },
+                new DxfType() { Text = "度卡DXF", Value = "UK" },
+                new DxfType() { Text = "AUTOCAD", Value = "ACAD" },
+                new DxfType() { Text = "AI DXF", Value = "AI" },
+                new DxfType() { Text = "其它DXF", Value = "OTHER" }
+            };
+            cbx_dxfType.DataSource = dxfTypeList;
+
+            cbx_dxfType.ValueMember = "Value";
+
+            cbx_dxfType.DisplayMember = "Text";
+
+            cbx_dxfType.Visible = false;
+        }
+
+        private void rb_xdf_CheckedChanged(object sender, EventArgs e)
+        {
+            if (rb_xdf.Checked)
+            {
+                cbx_dxfType.Visible = true;
+            }
+            else 
+            {
+                cbx_dxfType.Visible = false;
+            }
+        }
+
+        /// <summary>
+        /// 加载搜索缓存
+        /// </summary>
+        private void LoadSeachCache() 
+        {
+            if (File.Exists(serchCachePath))
+            {
+                var jTokenObj = (JToken)JsonConvert.DeserializeObject(File.ReadAllText(serchCachePath));
+
+                var fliePath = jTokenObj["FliePath"].ToString();
+
+                if (Directory.Exists(fliePath)) initialDirectory = fliePath;
+
+                var outputPath = jTokenObj["OutputPath"].ToString();
+
+                if (Directory.Exists(outputPath)) tbx_OutputPath.Text = outputPath;
+            }
+        }
+
+        /// <summary>
+        /// 加载转换类型授权
+        /// </summary>
+        private void LoadConvertAuth()
+        {
             var format = ConfigurationManager.AppSettings["Format"]?.ToString();
 
             string[] formatArray;
 
-            if (string.IsNullOrEmpty(format) || (formatArray = format.Split('|')).Length != 2)
+            if (string.IsNullOrEmpty(format) || (formatArray = format.Split('|')).Length != 3)
             {
                 lbl_Format.Text = "转换格式：  转换格式未授权，请授权后再使用！";
 
                 rb_prj.Visible = false;
+
+                rb_ets.Visible = false;
 
                 rb_xdf.Visible = false;
 
@@ -627,27 +486,35 @@ namespace ETSystem.AutoFileConvert
                 return;
             }
 
-            if (formatArray[0] != "1")
+            if (formatArray[0] != "1") rb_prj.Visible = false;
+
+            if (formatArray[1] != "1") rb_ets.Visible = false;
+
+            if (formatArray[2] != "1") rb_xdf.Visible = false;
+
+            if (rb_prj.Visible)
             {
-                rb_prj.Visible = false;
+                rb_prj.Checked = true;
+            }
+            else if (rb_ets.Visible)
+            {
+                rb_ets.Checked = true;
 
-                rb_prj.Checked = false;
+                rb_prj.Location = new System.Drawing.Point(0, 0);
 
-                rb_prj.Location = new Point(0, 0);
+                rb_ets.Location = new System.Drawing.Point(98, 69);
+            }
+            else if (rb_xdf.Visible)
+            {
+                rb_prj.Location = new System.Drawing.Point(0, 0);
+
+                rb_xdf.Location = new System.Drawing.Point(98, 69);
+
+                cbx_dxfType.Location = new System.Drawing.Point(148, 66);
 
                 rb_xdf.Checked = true;
-
-                rb_xdf.Location = new Point(98, 69);
             }
-
-            if (formatArray[1] != "1") 
-            { 
-                rb_xdf.Visible = false;
-
-                rb_xdf.Checked = false;
-            }
-
-            if (!rb_prj.Visible && !rb_xdf.Visible) 
+            else 
             {
                 lbl_Format.Text = "转换格式：  转换格式未授权，请授权后再使用！";
 

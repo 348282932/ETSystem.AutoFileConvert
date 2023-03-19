@@ -286,7 +286,7 @@ namespace ETSystem.AutoFileConvert.Common
             }
             catch (IOException)
             {
-                return new Response(false, "文件被占用，请关闭打开tes文件的应用后再试！");
+                return new Response(false, "文件被占用，请关闭打开待上传文件的应用后再试！");
             }
             catch (WebException)
             {
