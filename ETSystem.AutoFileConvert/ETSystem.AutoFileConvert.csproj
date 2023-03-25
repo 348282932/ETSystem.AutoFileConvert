@@ -127,11 +127,23 @@
     <Compile Include="FileConvertForm.Designer.cs">
       <DependentUpon>FileConvertForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="FileLibraryForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FileLibraryForm.Designer.cs">
+      <DependentUpon>FileLibraryForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="LoginForm.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="LoginForm.Designer.cs">
       <DependentUpon>LoginForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Model\DxfType.cs" />
     <Compile Include="Model\ETFile.cs" />
@@ -146,8 +158,14 @@
     <EmbeddedResource Include="FileConvertForm.resx">
       <DependentUpon>FileConvertForm.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="FileLibraryForm.resx">
+      <DependentUpon>FileLibraryForm.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="LoginForm.resx">
       <DependentUpon>LoginForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>

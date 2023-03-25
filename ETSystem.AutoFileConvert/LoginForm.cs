@@ -89,9 +89,9 @@ namespace ETSystem.AutoFileConvert
 
             #endregion
 
-            var easyFileConvertForm = new EasyFileConvertForm();
+            var mainForm = new MainForm();
 
-            easyFileConvertForm.Show();
+            mainForm.Show();
 
             this.Hide();
         }
