@@ -304,7 +304,7 @@ namespace ETSystem.AutoFileConvert
 
             if (rb_prj.Checked && !lbl_FliePath.Text.EndsWith(".ets", StringComparison.OrdinalIgnoreCase))
             {
-                MessageBox.Show("转正版请上传.ets格式的文件后再操作！");
+                MessageBox.Show("转盗版请上传.ets格式的文件后再操作！");
 
                 return;
             }
